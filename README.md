@@ -5,7 +5,8 @@ Token usage tracker for Claude Code. Know where your AI spend is going.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/humanstandardsystems/lens/main/install.sh | bash
+git clone https://github.com/humanstandardsystems/lens.git ~/lens
+bash ~/lens/install.sh
 ```
 
 ## Setup

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="humanstandardsystems/lens"
-VERSION="v1.0.0"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/usr/local/bin"
 BINARY="lens"
 
@@ -15,32 +14,29 @@ if [ "$OS" != "darwin" ]; then
 fi
 
 if [ "$ARCH" = "arm64" ]; then
-  ASSET="lens-darwin-arm64"
+  SRC="$SOURCE_DIR/bin/lens-darwin-arm64"
 elif [ "$ARCH" = "x86_64" ]; then
-  ASSET="lens-darwin-amd64"
+  SRC="$SOURCE_DIR/bin/lens-darwin-amd64"
 else
   echo "Unsupported architecture: $ARCH"
   exit 1
 fi
 
-URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
-
-echo "Installing lens $VERSION..."
-
-TMP=$(mktemp)
-if ! curl -fsSL "$URL" -o "$TMP"; then
-  echo "Download failed. Check your connection or visit:"
-  echo "  https://github.com/$REPO/releases"
-  rm -f "$TMP"
+if [ ! -f "$SRC" ]; then
+  echo "Binary not found at $SRC"
+  echo "Try: git pull && bash install.sh"
   exit 1
 fi
-chmod +x "$TMP"
+
+echo "Installing lens..."
 
 if [ -w "$INSTALL_DIR" ]; then
-  mv "$TMP" "$INSTALL_DIR/$BINARY"
+  cp "$SRC" "$INSTALL_DIR/$BINARY"
+  chmod +x "$INSTALL_DIR/$BINARY"
 else
   echo "Installing to $INSTALL_DIR (sudo required)..."
-  sudo mv "$TMP" "$INSTALL_DIR/$BINARY"
+  sudo cp "$SRC" "$INSTALL_DIR/$BINARY"
+  sudo chmod +x "$INSTALL_DIR/$BINARY"
 fi
 
 echo ""

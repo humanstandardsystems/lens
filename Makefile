@@ -6,9 +6,9 @@ build:
 
 build-all:
 	mkdir -p dist
-	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/lens-darwin-arm64 .
-	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/lens-darwin-amd64 .
-	@echo "Built: dist/lens-darwin-arm64, dist/lens-darwin-amd64"
+	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/lens-darwin-arm64 .
+	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/lens-darwin-amd64 .
+	@echo "Built: bin/lens-darwin-arm64, bin/lens-darwin-amd64"
 
 install: build
 	mv $(BINARY) /usr/local/bin/$(BINARY)
@@ -16,6 +16,6 @@ install: build
 
 clean:
 	rm -f $(BINARY)
-	rm -rf dist/
+	rm -rf bin/
 
 .PHONY: build build-all install clean
