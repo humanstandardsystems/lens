@@ -9,10 +9,12 @@ import (
 )
 
 type sessionRow struct {
-	sessionID string
-	project   string
-	firstSeen time.Time
-	estTokens int64
+	sessionID   string
+	project     string
+	firstSeen   time.Time
+	totalTokens int64
+	hitRate     float64
+	hasCache    bool
 }
 
 var (
@@ -22,7 +24,7 @@ var (
 
 var showCmd = &cobra.Command{
 	Use:   "show",
-	Short: "Rank sessions by estimated token usage",
+	Short: "Show sessions with cache hit rate",
 	RunE:  runShow,
 }
 
@@ -43,25 +45,36 @@ func runShow(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	base := `
-		SELECT session_id, project,
-		       MIN(timestamp) AS first_seen,
-		       SUM(input_chars + output_chars) / 4 AS est_tokens
-		FROM events
-		WHERE 1=1`
+	syncAllSessions(db)
+
+	ws := weekStart(cfg)
+	wsStr := ws.UTC().Format("2006-01-02T15:04:05Z")
+
+	var whereExtra string
 	var qargs []interface{}
 
 	if !showAll {
-		ws := weekStart(cfg)
-		base += " AND timestamp >= ?"
-		qargs = append(qargs, ws.UTC().Format("2006-01-02T15:04:05Z"))
+		whereExtra += " AND t.timestamp >= ?"
+		qargs = append(qargs, wsStr)
 	}
 	if showProject != "" {
-		base += " AND project = ?"
+		whereExtra += " AND t.project = ?"
 		qargs = append(qargs, showProject)
 	}
 
-	query := base + " GROUP BY session_id ORDER BY est_tokens DESC LIMIT 10"
+	query := fmt.Sprintf(`
+		SELECT
+		  t.session_id,
+		  t.project,
+		  MIN(t.timestamp) AS started,
+		  SUM(t.input_tokens + t.cache_create + t.cache_read + t.output_tokens) AS total_tokens,
+		  CAST(SUM(t.cache_read) AS REAL) /
+		    NULLIF(SUM(t.input_tokens + t.cache_create + t.cache_read), 0) AS hit_rate
+		FROM turns t
+		WHERE 1=1 %s
+		GROUP BY t.session_id
+		ORDER BY started DESC
+		LIMIT 20`, whereExtra)
 
 	rows, err := db.Query(query, qargs...)
 	if err != nil {
@@ -73,10 +86,15 @@ func runShow(cmd *cobra.Command, args []string) error {
 	for rows.Next() {
 		var s sessionRow
 		var tsStr string
-		if err := rows.Scan(&s.sessionID, &s.project, &tsStr, &s.estTokens); err != nil {
+		var hitRateNull *float64
+		if err := rows.Scan(&s.sessionID, &s.project, &tsStr, &s.totalTokens, &hitRateNull); err != nil {
 			continue
 		}
-		s.firstSeen, _ = time.Parse("2006-01-02T15:04:05Z", tsStr)
+		s.firstSeen = parseTimestamp(tsStr)
+		if hitRateNull != nil {
+			s.hitRate = *hitRateNull
+			s.hasCache = true
+		}
 		sessions = append(sessions, s)
 	}
 
@@ -85,41 +103,111 @@ func runShow(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	ws := weekStart(cfg)
 	we := ws.Add(7 * 24 * time.Hour)
-	header := fmt.Sprintf("LENS — AI Spend  ·  week of %s–%s",
-		ws.Format("Jan 2"), we.Format("Jan 2"))
+	header := fmt.Sprintf("WEEK · %s → %s", ws.Format("01-02"), we.Format("01-02"))
 	if showAll {
-		header = "LENS — AI Spend  ·  all time"
+		header = "ALL TIME"
 	}
 
-	const width = 50
+	const width = 57
 	divider := strings.Repeat("─", width)
 
 	fmt.Println(header)
 	fmt.Println(divider)
-	fmt.Printf(" %-3s  %-14s  %-16s  %s\n", "#", "date", "project", "est. tokens")
+	fmt.Printf(" %-14s  %-14s  %-7s  %s\n", "session", "project", "tokens", "cache")
 	fmt.Println(divider)
 
-	var total int64
-	for i, s := range sessions {
+	var totalTokens int64
+	var totalCacheRead, totalCacheInput int64
+
+	for _, s := range sessions {
 		dateStr := s.firstSeen.Local().Format("01-02 15:04")
 		project := s.project
-		if len(project) > 16 {
-			project = project[:15] + "…"
+		if len(project) > 14 {
+			project = project[:13] + "…"
 		}
-		fmt.Printf(" %-3d  %-14s  %-16s  ~%s\n", i+1, dateStr, project, formatTokens(s.estTokens))
-		total += s.estTokens
+		tokStr := formatTokensShort(s.totalTokens)
+
+		var cacheStr string
+		if !s.hasCache {
+			cacheStr = "—"
+		} else {
+			bar := cacheBar(s.hitRate)
+			pct := int(s.hitRate * 100)
+			warn := ""
+			if s.hitRate < 0.50 {
+				warn = " ⚠"
+			}
+			cacheStr = fmt.Sprintf("%s %d%%%s", bar, pct, warn)
+		}
+
+		fmt.Printf(" %-14s  %-14s  %-7s  %s\n", dateStr, project, tokStr, cacheStr)
+		totalTokens += s.totalTokens
+	}
+
+	// accumulate totals from turns for week summary
+	if !showAll {
+		db.QueryRow(`
+			SELECT
+			  SUM(cache_read),
+			  SUM(input_tokens + cache_create + cache_read)
+			FROM turns WHERE timestamp >= ?`, wsStr).
+			Scan(&totalCacheRead, &totalCacheInput)
+	} else {
+		db.QueryRow(`
+			SELECT SUM(cache_read), SUM(input_tokens + cache_create + cache_read)
+			FROM turns`).Scan(&totalCacheRead, &totalCacheInput)
 	}
 
 	fmt.Println(divider)
-	totalLabel := "total this week"
+	label := "week total"
 	if showAll {
-		totalLabel = "total all time"
+		label = "all time"
 	}
-	fmt.Printf(" %-35s  ~%s\n", totalLabel, formatTokens(total))
+	var weekCacheStr string
+	if totalCacheInput > 0 {
+		rate := float64(totalCacheRead) / float64(totalCacheInput)
+		bar := cacheBar(rate)
+		pct := int(rate * 100)
+		warn := ""
+		if rate < 0.50 {
+			warn = " ⚠"
+		}
+		weekCacheStr = fmt.Sprintf("%s %d%%%s", bar, pct, warn)
+	} else {
+		weekCacheStr = "—"
+	}
+	fmt.Printf(" %-31s  %-7s  %s\n", label, formatTokensShort(totalTokens), weekCacheStr)
 
 	return nil
+}
+
+// parseTimestamp handles both "2006-01-02T15:04:05Z" and "2006-01-02T15:04:05.999Z".
+func parseTimestamp(s string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t, _ = time.Parse("2006-01-02T15:04:05Z", s)
+	}
+	return t
+}
+
+func cacheBar(rate float64) string {
+	const cells = 9
+	filled := int(rate*float64(cells) + 0.5)
+	if filled > cells {
+		filled = cells
+	}
+	return strings.Repeat("▓", filled) + strings.Repeat("░", cells-filled)
+}
+
+func formatTokensShort(n int64) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
+	if n >= 1_000 {
+		return fmt.Sprintf("%.0fk", float64(n)/1_000)
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 func formatTokens(n int64) string {

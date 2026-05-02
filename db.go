@@ -21,6 +21,29 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_session   ON events (session_id);
 CREATE INDEX IF NOT EXISTS idx_project   ON events (project);
 CREATE INDEX IF NOT EXISTS idx_timestamp ON events (timestamp);
+
+CREATE TABLE IF NOT EXISTS turns (
+    session_id    TEXT NOT NULL,
+    project       TEXT NOT NULL,
+    timestamp     TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    cache_create  INTEGER NOT NULL DEFAULT 0,
+    cache_read    INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    message_id    TEXT NOT NULL,
+    PRIMARY KEY (session_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_turns_session   ON turns (session_id);
+CREATE INDEX IF NOT EXISTS idx_turns_project   ON turns (project);
+CREATE INDEX IF NOT EXISTS idx_turns_timestamp ON turns (timestamp);
+
+CREATE TABLE IF NOT EXISTS transcript_watermark (
+    session_id           TEXT PRIMARY KEY,
+    transcript_path      TEXT NOT NULL,
+    last_parsed_offset   INTEGER NOT NULL DEFAULT 0,
+    last_parsed_at       TEXT NOT NULL
+);
 `
 
 func openDB(dbPath string) (*sql.DB, error) {
