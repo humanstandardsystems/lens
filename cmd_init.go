@@ -11,6 +11,99 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const statuslineScript = `#!/bin/bash
+DB="$HOME/.lens/lens.db"
+CONFIG="$HOME/.lens/config.toml"
+[ -f "$DB" ] || exit 0
+
+RESET_DAY=$(grep 'reset_day' "$CONFIG" 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' | tr '[:upper:]' '[:lower:]')
+RESET_HOUR=$(grep 'reset_hour' "$CONFIG" 2>/dev/null | grep -o '[0-9]*')
+TZ_NAME=$(grep 'reset_timezone' "$CONFIG" 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/')
+
+python3 - <<EOF
+import sqlite3, os
+from datetime import datetime, timedelta, timezone
+
+try:
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("${TZ_NAME:-America/Los_Angeles}")
+except Exception:
+    tz = timezone.utc
+
+day_map  = {"monday":0,"tuesday":1,"wednesday":2,"thursday":3,"friday":4,"saturday":5,"sunday":6}
+reset_day     = "${RESET_DAY:-tuesday}"
+reset_weekday = day_map.get(reset_day, 1)
+
+now = datetime.now(tz)
+candidate = now.replace(hour=${RESET_HOUR:-18}, minute=0, second=0, microsecond=0)
+while candidate.weekday() != reset_weekday or candidate > now:
+    candidate -= timedelta(days=1)
+week_start = candidate.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+db = sqlite3.connect(os.path.expanduser("~/.lens/lens.db"))
+
+row = db.execute(
+    "SELECT "
+    "  SUM(input_tokens + cache_create + cache_read + output_tokens), "
+    "  CAST(SUM(cache_read) AS REAL) / MAX(SUM(input_tokens + cache_create + cache_read), 1) "
+    "FROM turns WHERE timestamp >= ?",
+    (week_start,)
+).fetchone()
+weekly   = row[0] or 0
+hit_rate = row[1] or 0.0
+
+session_tok = 0
+session_id_file = os.path.expanduser("~/.lens/session_id")
+if os.path.exists(session_id_file):
+    with open(session_id_file) as f:
+        raw = f.read().strip()
+    if raw and len(raw) == 15:
+        try:
+            sess_dt  = datetime.strptime(raw, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
+            sess_str = sess_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            r = db.execute(
+                "SELECT session_id FROM turns "
+                "GROUP BY session_id "
+                "HAVING ABS(julianday(MIN(timestamp)) - julianday(?)) < 0.0014 "
+                "ORDER BY ABS(julianday(MIN(timestamp)) - julianday(?)) ASC "
+                "LIMIT 1",
+                (sess_str, sess_str)
+            ).fetchone()
+            if r:
+                r2 = db.execute(
+                    "SELECT SUM(input_tokens + cache_create + cache_read + output_tokens) "
+                    "FROM turns WHERE session_id = ?",
+                    (r[0],)
+                ).fetchone()
+                session_tok = r2[0] or 0
+        except Exception:
+            pass
+
+db.close()
+
+since = candidate.strftime("%b %-d")
+
+def fmt(n):
+    if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
+    if n >= 1_000:     return f"{n/1_000:.0f}k"
+    return str(n)
+
+pct = int(hit_rate * 100)
+warn = " ⚠" if pct < 50 else ""
+
+def c(n): return f"\033[38;5;{n}m"
+R          = "\033[0m"
+B          = "\033[1m"
+BILL_GREEN = c(34)
+HUNDO_BLUE = c(33)
+SKY        = c(159)
+SKY_DARK   = c(241)
+CACHE_CLR  = c(214) if pct < 50 else c(79)
+
+print(f"{BILL_GREEN}⬡{R} {SKY}{B}{fmt(session_tok)}{R} {SKY_DARK}tok/sess{R}   {HUNDO_BLUE}⏺{R} {SKY}{B}{fmt(weekly)}{R} {SKY_DARK}tok/wk{R}   {CACHE_CLR}{B}{pct}%{R} {SKY_DARK}cache{warn}{R}")
+EOF
+`
+
 const hookScript = `#!/bin/bash
 INPUT=$(cat)
 SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
@@ -78,6 +171,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing hook: %w", err)
 	}
 
+	statuslinePath := filepath.Join(lensDir(), "statusline.sh")
+	if err := os.WriteFile(statuslinePath, []byte(statuslineScript), 0755); err != nil {
+		return fmt.Errorf("writing statusline: %w", err)
+	}
+
 	if err := wireHook(hookPath); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not auto-wire hook (%v)\n", err)
 		fmt.Printf("Add this to ~/.claude/settings.json manually:\n")
@@ -86,7 +184,36 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("Hook wired. Restart Claude Code to activate.")
 	}
 
+	if err := wireStatusline(statuslinePath); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not auto-wire statusline (%v)\n", err)
+		fmt.Printf("Add to ~/.claude/settings.json manually:\n")
+		fmt.Printf(`  {"statusLine":{"type":"command","command":"bash %s"}}`+"\n", statuslinePath)
+	} else {
+		fmt.Println("Statusline wired.")
+	}
+
 	return nil
+}
+
+func wireStatusline(statuslinePath string) error {
+	settingsPath := filepath.Join(os.Getenv("HOME"), ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return err
+	}
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return err
+	}
+	settings["statusLine"] = map[string]interface{}{
+		"type":    "command",
+		"command": "bash " + statuslinePath,
+	}
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(settingsPath, out, 0644)
 }
 
 func wireHook(hookPath string) error {
