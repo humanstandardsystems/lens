@@ -23,4 +23,5 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(sessionCmd)
+	rootCmd.AddCommand(syncCmd)
 }

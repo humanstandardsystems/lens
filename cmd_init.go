@@ -64,8 +64,9 @@ if os.path.exists(session_id_file):
             r = db.execute(
                 "SELECT session_id FROM turns "
                 "GROUP BY session_id "
-                "HAVING ABS(julianday(MIN(timestamp)) - julianday(?)) < 0.0014 "
-                "ORDER BY ABS(julianday(MIN(timestamp)) - julianday(?)) ASC "
+                "HAVING julianday(MIN(timestamp)) >= julianday(?) "
+                "   AND julianday(MIN(timestamp)) <= julianday(?) + 10.0/1440.0 "
+                "ORDER BY MIN(timestamp) ASC "
                 "LIMIT 1",
                 (sess_str, sess_str)
             ).fetchone()
@@ -106,7 +107,7 @@ EOF
 
 const hookScript = `#!/bin/bash
 INPUT=$(cat)
-SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
+SESSION_ID=$(cat ~/.lens/session_id 2>/dev/null || echo "unknown")
 PROJECT=$(basename "$PWD")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
@@ -116,6 +117,8 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
 
 sqlite3 ~/.lens/lens.db \
   "INSERT INTO events VALUES('$SESSION_ID','$PROJECT','$TIMESTAMP','$TOOL_NAME',$INPUT_CHARS,$OUTPUT_CHARS,'$FILE_PATH');"
+
+lens sync > /dev/null 2>&1 &
 `
 
 var initCmd = &cobra.Command{
