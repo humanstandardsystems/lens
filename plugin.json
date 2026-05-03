@@ -1,6 +1,6 @@
 {
   "name": "lens",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Token-usage tracker for Claude Code — logs every tool call to local SQLite and reports estimated spend by session and project.",
   "priority": 50
 }
