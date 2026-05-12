@@ -22,16 +22,28 @@ Lens is read-only on Claude Code. It hooks one event (`PostToolUse`) to record t
 ## 2. Install
 
 ```bash
-git clone https://github.com/humanstandardsystems/lens.git ~/.claude/sources/lens
-cd ~/.claude/sources/lens && make install
+brew tap humanstandardsystems/tap
+brew install humanstandardsystems/tap/lens
 lens init
 ```
 
 Statusline and hook activate live — no restart needed.
 
-`lens init` will prompt for your Anthropic weekly reset day and time, then auto-wire the statusline and the `PostToolUse` hook into `~/.claude/settings.json`. It's idempotent — running it twice is safe.
+`lens init` prompts for your Anthropic weekly reset day and time, then auto-wires the statusline and the `PostToolUse` hook into `~/.claude/settings.json`. It's idempotent — running it twice is safe.
 
-Requirements: macOS (Apple Silicon or Intel), Go 1.21+. Homebrew tap distribution is queued (v0.3.0+). Linux support is on the roadmap.
+> **Why the namespaced install path?** There's an unrelated `lens` cask (the Kubernetes IDE), so plain `brew install lens` resolves to that one. Tapping puts the formula on your machine; the namespaced install picks the right one. After that, the binary is just `lens` everywhere.
+
+Requirements: macOS (Apple Silicon or Intel). Linux support is on the roadmap.
+
+### From source (contributors)
+
+```bash
+git clone https://github.com/humanstandardsystems/lens.git
+cd lens && make install
+lens init
+```
+
+Requires Go 1.21+. Drops the binary at `/usr/local/bin/lens`.
 
 ---
 
@@ -152,31 +164,24 @@ db.go              ← schema + open
 ### Update
 
 ```bash
-cd ~/.claude/sources/lens && git pull && make install
+brew update && brew upgrade lens
 ```
-
-`make install` is idempotent — running it twice is safe.
 
 ### Uninstall
 
 ```bash
 lens uninstall
+brew uninstall lens
 ```
 
-Leaves cleanly:
+`lens uninstall` leaves cleanly:
 
-1. Surgically removes lens's entries from `~/.claude/settings.json` (the `PostToolUse` hook and the `statusLine`). Other hooks and your other settings are untouched. A `.bak` file is written next to it before edit.
+1. Surgically removes lens's entries from `~/.claude/settings.json` (the `PostToolUse` hook and the `statusLine`). Other hooks and your other settings are untouched — sjson-based path edits preserve key order and whitespace. A `.bak` file is written before edit.
 2. **Asks** before deleting `~/.lens/` — that's your historical data. Keeping it means a future re-install picks up where you left off. Deleting it is forever.
 
-Then remove the binary itself:
+Then `brew uninstall lens` removes the binary.
 
-```bash
-rm /usr/local/bin/lens
-```
-
-(Once lens ships via Homebrew tap, this becomes `brew uninstall lens`.)
-
-The hook and statusline scripts include a self-defense guard: if the `lens` binary is missing, they exit clean. So no error spam from the in-memory hook between `lens uninstall` and binary removal — or between binary removal and Claude Code restart.
+The hook and statusline scripts ship with a self-defense guard: if the `lens` binary is missing, they exit clean. So no error spam in the gap between `brew uninstall lens` and Claude Code restart, while the in-memory hook reference still points at `~/.lens/hook.sh`.
 
 ---
 
@@ -190,5 +195,5 @@ Phase 2 shipped (statusline + accurate JSONL-based tracking). Phase 3 is three s
 
 Other open items:
 
-- **Homebrew tap distribution** — full migration spec at `r29k/lab/lens-brew-migration.md`. v0.3.0 ships the Go-side groundwork (`lens uninstall` subcommand, self-defense guards in hook + statusline, `make release` tarballs). The tap repo + formula land in a follow-up.
-- **Linux support** — currently macOS-only. Build path for Linux exists but is not wired into the release pipeline.
+- **Linux support** — currently macOS-only. The `lens` Go binary builds for Linux trivially (`GOOS=linux make build-all`) but the release pipeline + brew formula don't ship Linux assets yet.
+- **Plain `brew install lens`** — currently blocked by the unrelated `lens` cask collision; namespaced install (`brew install humanstandardsystems/tap/lens`) works today.
