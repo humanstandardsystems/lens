@@ -173,8 +173,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	dayNeeded := day == ""
 	hourNeeded := hour < 0 || hour > 23
 
+	const eraseLine = "\r\033[K"
+	nonInteractiveErr := fmt.Errorf("lens init needs an interactive terminal.\n  Run instead: lens init --day tuesday --hour 18\n  (substitute your real reset — day: monday..sunday, hour: 0..23)")
+
 	if (dayNeeded || hourNeeded) && !isStdinTTY() {
-		return fmt.Errorf("stdin is not a terminal — pass --day and --hour for non-interactive runs (e.g. lens init --day tuesday --hour 18)")
+		return nonInteractiveErr
 	}
 
 	if dayNeeded || hourNeeded {
@@ -185,7 +188,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Print("  Day   (e.g. tuesday): ")
 			input, err := reader.ReadString('\n')
 			if errors.Is(err, io.EOF) && strings.TrimSpace(input) == "" {
-				return fmt.Errorf("stdin closed before day captured — pass --day and --hour for non-interactive runs")
+				fmt.Print(eraseLine + "\033[F" + eraseLine)
+				return nonInteractiveErr
 			}
 			input = strings.ToLower(strings.TrimSpace(input))
 			if validDays[input] {
@@ -200,7 +204,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Print("  Time  (e.g. 18:00):   ")
 			input, err := reader.ReadString('\n')
 			if errors.Is(err, io.EOF) && strings.TrimSpace(input) == "" {
-				return fmt.Errorf("stdin closed before hour captured — pass --day and --hour for non-interactive runs")
+				fmt.Print(eraseLine)
+				return nonInteractiveErr
 			}
 			if h, ok := parseHour(input); ok {
 				hour = h
