@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,30 +123,99 @@ sqlite3 ~/.lens/lens.db \
 lens sync > /dev/null 2>&1 &
 `
 
+var (
+	initDayFlag  string
+	initHourFlag int
+)
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Set up lens: create DB, write hook, configure reset window",
 	RunE:  runInit,
 }
 
+func init() {
+	initCmd.Flags().StringVar(&initDayFlag, "day", "", "reset day (monday..sunday) — skips interactive prompt")
+	initCmd.Flags().IntVar(&initHourFlag, "hour", -1, "reset hour 0-23 — skips interactive prompt")
+}
+
+var validDays = map[string]bool{
+	"sunday": true, "monday": true, "tuesday": true, "wednesday": true,
+	"thursday": true, "friday": true, "saturday": true,
+}
+
+func isStdinTTY() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+func parseHour(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	var h int
+	if n, _ := fmt.Sscanf(s, "%d:", &h); n == 1 && h >= 0 && h <= 23 {
+		return h, true
+	}
+	if n, _ := fmt.Sscanf(s, "%d", &h); n == 1 && h >= 0 && h <= 23 {
+		return h, true
+	}
+	return 0, false
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("Setting up lens...\n")
-	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("When does your Anthropic weekly usage reset?\n")
-	fmt.Print("  Day   (e.g. tuesday): ")
-	day, _ := reader.ReadString('\n')
-	day = strings.ToLower(strings.TrimSpace(day))
-	if day == "" {
-		day = "tuesday"
+	day := strings.ToLower(strings.TrimSpace(initDayFlag))
+	hour := initHourFlag
+
+	dayNeeded := day == ""
+	hourNeeded := hour < 0 || hour > 23
+
+	if (dayNeeded || hourNeeded) && !isStdinTTY() {
+		return fmt.Errorf("stdin is not a terminal — pass --day and --hour for non-interactive runs (e.g. lens init --day tuesday --hour 18)")
 	}
 
-	fmt.Print("  Time  (e.g. 18:00):   ")
-	timeStr, _ := reader.ReadString('\n')
-	timeStr = strings.TrimSpace(timeStr)
-	hour := 18
-	if timeStr != "" {
-		fmt.Sscanf(timeStr, "%d:", &hour)
+	if dayNeeded || hourNeeded {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("When does your Anthropic weekly usage reset?\n")
+
+		for dayNeeded {
+			fmt.Print("  Day   (e.g. tuesday): ")
+			input, err := reader.ReadString('\n')
+			if errors.Is(err, io.EOF) && strings.TrimSpace(input) == "" {
+				return fmt.Errorf("stdin closed before day captured — pass --day and --hour for non-interactive runs")
+			}
+			input = strings.ToLower(strings.TrimSpace(input))
+			if validDays[input] {
+				day = input
+				dayNeeded = false
+				break
+			}
+			fmt.Println("  → not a valid day. Try: monday, tuesday, wednesday, thursday, friday, saturday, sunday")
+		}
+
+		for hourNeeded {
+			fmt.Print("  Time  (e.g. 18:00):   ")
+			input, err := reader.ReadString('\n')
+			if errors.Is(err, io.EOF) && strings.TrimSpace(input) == "" {
+				return fmt.Errorf("stdin closed before hour captured — pass --day and --hour for non-interactive runs")
+			}
+			if h, ok := parseHour(input); ok {
+				hour = h
+				hourNeeded = false
+				break
+			}
+			fmt.Println("  → not a valid time. Use HH:00 format (e.g. 18:00) or a single hour 0-23.")
+		}
+	}
+
+	if !validDays[day] {
+		return fmt.Errorf("invalid --day %q (must be monday..sunday)", day)
+	}
+	if hour < 0 || hour > 23 {
+		return fmt.Errorf("invalid --hour %d (must be 0-23)", hour)
 	}
 
 	loc := "America/Chicago"
@@ -194,6 +265,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Println("Statusline wired.")
 	}
+
+	fmt.Printf("\n✓ saved: reset %s %02d:00 %s\n", day, hour, loc)
 
 	return nil
 }
