@@ -14,6 +14,7 @@ import (
 )
 
 const statuslineScript = `#!/bin/bash
+command -v lens >/dev/null 2>&1 || exit 0
 DB="$HOME/.lens/lens.db"
 CONFIG="$HOME/.lens/config.toml"
 [ -f "$DB" ] || exit 0
@@ -108,6 +109,7 @@ EOF
 `
 
 const hookScript = `#!/bin/bash
+command -v lens >/dev/null 2>&1 || exit 0
 INPUT=$(cat)
 SESSION_ID=$(cat ~/.lens/session_id 2>/dev/null || echo "unknown")
 PROJECT=$(basename "$PWD")

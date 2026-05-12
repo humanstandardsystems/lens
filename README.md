@@ -23,7 +23,7 @@ Lens is read-only on Claude Code. It hooks one event (`PostToolUse`) to record t
 
 ```bash
 git clone https://github.com/humanstandardsystems/lens.git ~/.claude/sources/lens
-bash ~/.claude/sources/lens/install.sh
+cd ~/.claude/sources/lens && make install
 lens init
 ```
 
@@ -31,7 +31,7 @@ Statusline and hook activate live — no restart needed.
 
 `lens init` will prompt for your Anthropic weekly reset day and time, then auto-wire the statusline and the `PostToolUse` hook into `~/.claude/settings.json`. It's idempotent — running it twice is safe.
 
-Requirements: macOS (Apple Silicon or Intel). Linux support is on the roadmap.
+Requirements: macOS (Apple Silicon or Intel), Go 1.21+. Homebrew tap distribution is queued (v0.3.0+). Linux support is on the roadmap.
 
 ---
 
@@ -152,24 +152,31 @@ db.go              ← schema + open
 ### Update
 
 ```bash
-bash ~/.claude/sources/lens/update.sh
+cd ~/.claude/sources/lens && git pull && make install
 ```
 
-That's `git pull` + re-run `install.sh`. Install is idempotent.
+`make install` is idempotent — running it twice is safe.
 
 ### Uninstall
 
 ```bash
-bash ~/.claude/sources/lens/uninstall.sh
+lens uninstall
 ```
 
 Leaves cleanly:
 
-1. Removes `/usr/local/bin/lens` (the binary).
-2. Surgically removes lens's entries from `~/.claude/settings.json` (the `PostToolUse` hook and the `statusLine`). Other hooks and your other settings are untouched. A `.bak` file is written next to it before edit.
-3. **Asks** before deleting `~/.lens/` — that's your historical data. Keeping it means a future re-install picks up where you left off. Deleting it is forever.
+1. Surgically removes lens's entries from `~/.claude/settings.json` (the `PostToolUse` hook and the `statusLine`). Other hooks and your other settings are untouched. A `.bak` file is written next to it before edit.
+2. **Asks** before deleting `~/.lens/` — that's your historical data. Keeping it means a future re-install picks up where you left off. Deleting it is forever.
 
-Restart Claude Code after uninstall to drop the hook + statusline from the live session.
+Then remove the binary itself:
+
+```bash
+rm /usr/local/bin/lens
+```
+
+(Once lens ships via Homebrew tap, this becomes `brew uninstall lens`.)
+
+The hook and statusline scripts include a self-defense guard: if the `lens` binary is missing, they exit clean. So no error spam from the in-memory hook between `lens uninstall` and binary removal — or between binary removal and Claude Code restart.
 
 ---
 
@@ -183,16 +190,5 @@ Phase 2 shipped (statusline + accurate JSONL-based tracking). Phase 3 is three s
 
 Other open items:
 
-- **Linux support** — `install.sh` currently bails on non-Darwin.
-
----
-
-## Build from source
-
-Requires Go 1.21+.
-
-```bash
-git clone https://github.com/humanstandardsystems/lens.git
-cd lens
-make install
-```
+- **Homebrew tap distribution** — full migration spec at `r29k/lab/lens-brew-migration.md`. v0.3.0 ships the Go-side groundwork (`lens uninstall` subcommand, self-defense guards in hook + statusline, `make release` tarballs). The tap repo + formula land in a follow-up.
+- **Linux support** — currently macOS-only. Build path for Linux exists but is not wired into the release pipeline.

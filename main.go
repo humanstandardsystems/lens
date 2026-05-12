@@ -24,4 +24,5 @@ func init() {
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(sessionCmd)
 	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(uninstallCmd)
 }
