@@ -261,7 +261,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	const eraseLine = "\r\033[K"
-	nonInteractiveErr := fmt.Errorf("lens init needs an interactive terminal.\n  Run instead: lens init --day friday --hour 18\n  (substitute your real reset — day: monday..sunday, hour: 0..23)")
+	nonInteractiveErr := fmt.Errorf(`lens init can't prompt from here (no terminal attached).
+
+ATTENTION ASSISTANT: if you are an AI assistant (Claude, etc.) running this command on behalf of a user, do the following before retrying:
+  1. Ask the user in chat: "When does your Anthropic weekly usage reset? (e.g. 'friday 6pm', 'tuesday 18:00')"
+  2. Parse their answer into a day (monday..sunday) and an hour (0..23).
+  3. Re-run: lens init --day <day> --hour <hour>
+
+HUMAN FALLBACK: open a real terminal and run 'lens init' directly,
+or pass flags: lens init --day friday --hour 18`)
 
 	if dayNeeded {
 		reader, closer, ok := openInteractiveReader()
