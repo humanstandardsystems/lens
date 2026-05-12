@@ -22,8 +22,8 @@ Lens is read-only on Claude Code. It hooks one event (`PostToolUse`) to record t
 ## 2. Install
 
 ```bash
-git clone https://github.com/humanstandardsystems/lens.git ~/lens
-bash ~/lens/install.sh
+git clone https://github.com/humanstandardsystems/lens.git ~/.claude/sources/lens
+bash ~/.claude/sources/lens/install.sh
 lens init
 ```
 
@@ -152,7 +152,7 @@ db.go              ← schema + open
 ### Update
 
 ```bash
-bash ~/lens/update.sh
+bash ~/.claude/sources/lens/update.sh
 ```
 
 That's `git pull` + re-run `install.sh`. Install is idempotent.
@@ -160,7 +160,7 @@ That's `git pull` + re-run `install.sh`. Install is idempotent.
 ### Uninstall
 
 ```bash
-bash ~/lens/uninstall.sh
+bash ~/.claude/sources/lens/uninstall.sh
 ```
 
 Leaves cleanly:
