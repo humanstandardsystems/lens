@@ -41,4 +41,3 @@ fi
 
 echo ""
 echo "lens installed. Run 'lens init' to set up tracking."
-echo "Then restart Claude Code to activate the hook."

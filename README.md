@@ -27,7 +27,7 @@ bash ~/.claude/sources/lens/install.sh
 lens init
 ```
 
-Restart Claude Code after `lens init` to activate the hook.
+Statusline and hook activate live — no restart needed.
 
 `lens init` will prompt for your Anthropic weekly reset day and time, then auto-wire the statusline and the `PostToolUse` hook into `~/.claude/settings.json`. It's idempotent — running it twice is safe.
 

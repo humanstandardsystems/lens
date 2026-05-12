@@ -338,7 +338,7 @@ or pass flags: lens init --day friday --hour 18`)
 		fmt.Printf("Add this to ~/.claude/settings.json manually:\n")
 		fmt.Printf(`  {"hooks":{"PostToolUse":[{"matcher":"","hooks":[{"type":"command","command":"bash %s"}]}]}}`+"\n", hookPath)
 	} else {
-		fmt.Println("Hook wired. Restart Claude Code to activate.")
+		fmt.Println("Hook wired. Active on next tool call.")
 	}
 
 	if err := wireStatusline(statuslinePath); err != nil {
