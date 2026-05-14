@@ -341,6 +341,14 @@ or pass flags: lens init --day friday --hour 18`)
 		fmt.Println("Statusline wired.")
 	}
 
+	if err := wireSessionStart(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not auto-wire SessionStart hook (%v)\n", err)
+		fmt.Println(`Add to ~/.claude/settings.json manually under hooks.SessionStart:`)
+		fmt.Println(`  {"hooks":[{"type":"command","command":"bash -c 'date -u +\"%Y%m%dT%H%M%S\" > ~/.lens/session_id'"}]}`)
+	} else {
+		fmt.Println("SessionStart hook wired.")
+	}
+
 	fmt.Printf("\n✓ saved: reset %s %02d:00 %s\n", day, hour, loc)
 
 	return nil
@@ -416,6 +424,62 @@ func wireHook(hookPath string) error {
 		},
 	}
 	hooks["PostToolUse"] = append(existing, hookEntry)
+
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(settingsPath, out, 0644)
+}
+
+func wireSessionStart() error {
+	settingsPath := filepath.Join(os.Getenv("HOME"), ".claude", "settings.json")
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return err
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return err
+	}
+
+	hooks, ok := settings["hooks"].(map[string]interface{})
+	if !ok {
+		hooks = map[string]interface{}{}
+		settings["hooks"] = hooks
+	}
+
+	existing, _ := hooks["SessionStart"].([]interface{})
+
+	// Skip if already wired
+	for _, h := range existing {
+		hmap, ok := h.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		hs, _ := hmap["hooks"].([]interface{})
+		for _, inner := range hs {
+			imap, ok := inner.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if cmd, ok := imap["command"].(string); ok && strings.Contains(cmd, ".lens/session_id") {
+				return nil
+			}
+		}
+	}
+
+	sessionEntry := map[string]interface{}{
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"type":    "command",
+				"command": `bash -c 'date -u +"%Y%m%dT%H%M%S" > ~/.lens/session_id'`,
+			},
+		},
+	}
+	hooks["SessionStart"] = append(existing, sessionEntry)
 
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {

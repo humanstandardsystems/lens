@@ -1,5 +1,5 @@
 BINARY = lens
-VERSION = v0.3.1
+VERSION = v0.3.2
 
 build:
 	go build -ldflags="-s -w" -o $(BINARY) .
