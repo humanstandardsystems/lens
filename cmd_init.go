@@ -65,21 +65,11 @@ if os.path.exists(session_id_file):
             sess_dt  = datetime.strptime(raw, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
             sess_str = sess_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
             r = db.execute(
-                "SELECT session_id FROM turns "
-                "GROUP BY session_id "
-                "HAVING julianday(MIN(timestamp)) >= julianday(?) "
-                "   AND julianday(MIN(timestamp)) <= julianday(?) + 10.0/1440.0 "
-                "ORDER BY MIN(timestamp) ASC "
-                "LIMIT 1",
-                (sess_str, sess_str)
+                "SELECT SUM(input_tokens + cache_create + cache_read + output_tokens) "
+                "FROM turns WHERE timestamp >= ?",
+                (sess_str,)
             ).fetchone()
-            if r:
-                r2 = db.execute(
-                    "SELECT SUM(input_tokens + cache_create + cache_read + output_tokens) "
-                    "FROM turns WHERE session_id = ?",
-                    (r[0],)
-                ).fetchone()
-                session_tok = r2[0] or 0
+            session_tok = r[0] or 0
         except Exception:
             pass
 
