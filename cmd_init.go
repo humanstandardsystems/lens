@@ -78,7 +78,13 @@ db.close()
 since = candidate.strftime("%b %-d")
 
 def fmt(n):
-    if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
+    if n >= 1_000_000:
+        m = n // 1_000_000
+        rem_k = round((n % 1_000_000) / 1_000)
+        if rem_k >= 1000:
+            m += 1
+            rem_k = 0
+        return f"{m}M" if rem_k == 0 else f"{m}M {rem_k}k"
     if n >= 1_000:     return f"{n/1_000:.0f}k"
     return str(n)
 
